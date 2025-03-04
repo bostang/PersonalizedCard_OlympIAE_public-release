@@ -11,6 +11,236 @@ from common import *
 
 # Implementasi Fungsi/Prosedur
 
+import pandas as pd
+
+import pandas as pd
+
+def get_target_reach_date(nama_team, df_detail, target_distance=42.2):
+    """
+    Menentukan tanggal pertama kali tim mencapai target_distance secara kronologis.
+
+    Args:
+        nama_team (str): Nama tim peserta.
+        df_detail (pd.DataFrame): Data aktivitas peserta.
+        target_distance (float): Jarak target dalam km (default: 42.2 km untuk lari, 180 km untuk sepeda).
+
+    Returns:
+        datetime or None: Tanggal pencapaian target atau None jika tidak tercapai.
+    """
+    # Filter data berdasarkan nama tim
+    df = df_detail[df_detail["nama_team"] == nama_team].copy()
+
+    if df.empty:
+        return None  # Jika tidak ada data, kembalikan None
+    
+    # Konversi tanggal ke datetime
+    df["tanggal_submit"] = pd.to_datetime(df["tanggal_submit"], errors="coerce", format='%d/%m/%Y %H:%M:%S')
+
+    # Urutkan berdasarkan tanggal_submit (kronologis)
+    df = df.sort_values(by="tanggal_submit")
+
+    # Inisialisasi variabel
+    total_distance = 0
+
+    # Iterasi aktivitas secara kronologis
+    for _, row in df.iterrows():
+        total_distance += row["jarak"]
+
+        # Jika sudah mencapai target, kembalikan tanggal aktivitas terakhir yang dihitung
+        if total_distance >= target_distance:
+            return row["tanggal_submit"]
+
+    return None  # Jika target tidak tercapai, kembalikan None
+
+def save_all_teams_stats_to_csv(df_detail, output_filename="./output/olympiae2025_final_result_team.csv"):
+    """
+    Menghitung statistik terbaik untuk semua tim berdasarkan kategori dan menyimpan hasilnya ke dalam file CSV.
+
+    Args:
+        df_detail (pd.DataFrame): Data aktivitas peserta.
+        output_filename (str, optional): Nama file CSV untuk menyimpan hasil (default: "./output/team_stats.csv").
+    """
+    # Dapatkan daftar unik tim dan kategori dari dataframe
+    unique_teams = df_detail[["nama_team", "kategori"]].dropna().drop_duplicates()
+
+    # Mapping kategori ke target distance
+    category_target_distances = {
+        "170K RUN TEAM OF 4": 170.0,
+        "85K RUN DUO": 85.0,
+        "540K RIDE TEAM OF 4": 540.0
+    }
+
+    # List untuk menyimpan hasil
+    results = []
+
+    for _, row in unique_teams.iterrows():
+        team = row["nama_team"]
+        category = row["kategori"]
+
+        # Tentukan target jarak berdasarkan kategori
+        target_distance = category_target_distances.get(category, 42.2)  # Default 42.2 km jika kategori tidak dikenal
+
+        stats = get_best_activity_stats_team(team, df_detail, target_distance)
+        target_reach_date = get_target_reach_date(team, df_detail, target_distance)
+
+        # Pastikan hasil tidak mengandung error sebelum menyimpan
+        if "error" not in stats:
+            results.append({
+                "Team": stats["Team"],
+                "Category": category,
+                "Total Distance": f"{stats['Total Distance']:.2f}",
+                "Total Time": stats["Total Time"],
+                "Average Speed": f"{stats['Average Speed']:.2f}",
+                "estimated_time_for_target_distance": str(stats["estimated_time_for_target_distance"])[:-7],  # Potong mikrodetik
+                "Target Reach Date": target_reach_date
+
+            })
+
+    # Konversi hasil ke DataFrame
+    df_results = pd.DataFrame(results)
+
+    # Simpan ke CSV dengan separator ';'
+    df_results.to_csv(output_filename, index=False, sep=";")
+
+    print(f"✅ Hasil perlombaan peserta (kategori tim) telah disimpan ke {output_filename}")
+
+def get_best_activity_stats_team(nama_team, df_detail, target_distance=42.2):
+    """
+    Menentukan kombinasi aktivitas terbaik berdasarkan kecepatan tertinggi 
+    hingga mencapai jarak tertentu (default: 42.2 km untuk lari, 180 km untuk sepeda) 
+    untuk seluruh anggota tim.
+
+    Args:
+        nama_team (str): Nama tim peserta.
+        df_detail (pd.DataFrame): Data aktivitas peserta.
+        target_distance (float): Jarak target dalam km (default: 42.2 km untuk lari, 180 km untuk sepeda).
+
+    Returns:
+        dict: Statistik aktivitas terbaik tim, termasuk total jarak, waktu, rata-rata speed,
+              estimasi waktu untuk menempuh target_distance, dan tanggal pencapaian target.
+    """
+    # Filter data berdasarkan nama tim
+    df = df_detail[df_detail["nama_team"] == nama_team].copy()
+
+    if df.empty:
+        return {"error": f"Tidak ada data untuk tim {nama_team}"}
+    
+    # Konversi waktu ke timedelta
+    df["elapsed_time"] = pd.to_timedelta(df["elapsed_time"], errors="coerce")
+
+    # Pastikan kolom 'tanggal' dalam format datetime
+
+    df["tanggal_submit"] = pd.to_datetime(df["tanggal_submit"], errors="coerce", format='%d/%m/%Y %H:%M:%S')
+
+
+    # Urutkan berdasarkan speed tertinggi
+    df = df.sort_values(by="speed", ascending=False)
+
+    # Pilih aktivitas dengan speed tertinggi hingga total jarak >= target_distance
+    selected_activities = []
+    total_distance = 0
+    total_time = pd.Timedelta(0)
+    total_speed = 0
+    activity_count = 0
+
+    for _, row in df.iterrows():
+        if total_distance >= target_distance:
+            break
+        selected_activities.append(row)
+        total_distance += row["jarak"]
+        total_time += row["elapsed_time"]
+        total_speed += row["speed"]
+        activity_count += 1
+
+    # Hitung rata-rata speed
+    avg_speed = total_speed / activity_count if activity_count > 0 else 0
+
+    # Estimasi waktu untuk Target Jarak
+    normalized_time = pd.to_timedelta(target_distance / avg_speed, unit="h") if avg_speed > 0 else pd.Timedelta(0)
+        
+    return {
+        "Team": nama_team,
+        "Total Distance": total_distance,
+        "Total Time": total_time,
+        "Average Speed": avg_speed,
+        "estimated_time_for_target_distance": normalized_time,
+        "Selected Activities": selected_activities,
+    }
+
+def save_participant_data_to_csv(df_detail, df_podium, output_file="./output/olympiae2025_final_result_solo.csv"):
+    """
+    Menyimpan data peserta (1-303) ke dalam file CSV dengan informasi:
+    - Nama
+    - Kategori (hanya 180K RIDE dan 42.2K RUN)
+    - Tanggal Finish (dari get_date_when_reaching_target)
+    - Minimum Elapsed Time Target (dari get_best_activity_stats)
+    
+    Parameter:
+    - df_detail: DataFrame utama yang berisi informasi peserta
+    - df_podium: DataFrame yang diperlukan untuk fungsi tanggal finish
+    - output_file: Nama file CSV output
+    """
+
+    # Hanya proses peserta dalam kategori 180K RIDE dan 42.2K RUN
+    valid_categories = {"180K RIDE SOLO", "42.2K RUN SOLO"}
+    df_podium_filtered = df_podium[df_podium["kategori"].astype(str).isin(valid_categories)]
+
+    # List untuk menyimpan hasil
+    data_list = []
+
+    # Mapping kategori ke target distance
+    category_target_distances = {
+        "42.2K RUN SOLO": 42.2,
+        "180K RIDE SOLO": 180
+    }
+    
+
+    # Iterasi setiap peserta yang valid
+    for index, row in df_podium_filtered.iterrows():
+        bib_number = int(row["bib_peserta"])
+
+        # Pastikan BIB tidak kosong
+        if pd.isna(bib_number):
+            print(f"⚠️ Melewati peserta tanpa BIB pada index {index}")
+            continue
+
+        category = row["kategori"]
+
+        # Tentukan target jarak berdasarkan kategori
+        target_distance = category_target_distances.get(category, 42.2)  # Default 42.2 km jika kategori tidak dikenal
+
+        # Dapatkan tanggal finish
+        hasil_pencapaian = get_date_when_reaching_target(bib_number=bib_number, df_detail=df_detail, df_podium=df_podium)
+        tanggal_finish = hasil_pencapaian.get("Tanggal Pencapaian", "Tidak Ditemukan")
+
+        # Dapatkan minimum elapsed time target
+        best_stats = get_best_activity_stats(bib_number=bib_number, df_detail=df_detail, target_distance=target_distance)
+        minimum_elapsed_time_target = best_stats.get("estimated_time_for_target_distance", "Tidak Ditemukan")
+        total_jarak = round(best_stats.get("Total Distance", 0),2)
+        total_time = best_stats.get("Total Time", "Tidak Ditemukan")
+        average_speed = round(best_stats.get("Average Speed", 0),2)
+    
+
+        # Tambahkan ke list hasil
+        data_list.append([
+            row["bib_peserta"],
+            row["nama_individu"],
+            row["kategori"],
+            total_jarak,
+            total_time,
+            average_speed,
+            tanggal_finish,
+            minimum_elapsed_time_target
+        ])
+
+    # Konversi ke DataFrame
+    df_output = pd.DataFrame(data_list, columns=["BIB Peserta", "Nama", "Kategori", "Total Jarak", "Total Waktu", "Average Speed", "Tanggal Finish", "Minimum Elapsed Time Target"])
+
+    # Simpan ke CSV
+    df_output.to_csv(output_file, index=False, encoding="utf-8", sep=";")
+
+    print(f"✅ Hasil perlombaan peserta (kategori 180K RIDE & 42.2K RUN) telah disimpan ke {output_file}")
+
 def get_best_activity_stats(bib_number, df_detail, target_distance=42.2):
     """
     Menentukan kombinasi aktivitas terbaik berdasarkan kecepatan tertinggi 
@@ -62,9 +292,77 @@ def get_best_activity_stats(bib_number, df_detail, target_distance=42.2):
         "Total Distance": total_distance,
         "Total Time": total_time,
         "Average Speed": avg_speed,
-        "Estimated Time for target distance": normalized_time,
+        "estimated_time_for_target_distance": normalized_time,
         "Selected Activities": selected_activities,
     }
+
+def get_date_when_reaching_target(bib_number, df_detail, df_podium):
+    """
+    Menentukan tanggal ketika peserta dengan nomor BIB tertentu mencapai total jarak target 
+    berdasarkan kategori lomba.
+
+    Args:
+        bib_number (int): Nomor BIB peserta.
+        df_detail (pd.DataFrame): Data aktivitas peserta.
+        df_podium (pd.DataFrame): Data peserta lomba dengan kategori lomba.
+
+    Returns:
+        dict: Berisi BIB peserta, kategori lomba, target jarak, tanggal pencapaian target, 
+              dan total jarak yang ditempuh.
+    """
+    # Dapatkan informasi peserta dari df_podium
+    nama_peserta, _, _, _, _, _, _, _, kategori, _, _ = get_statistik_peserta(f"{bib_number:04d}", df_podium)
+    
+    if not nama_peserta:
+        return {"BIB": bib_number, "Kategori": None, "Target Distance": None, "Tanggal Pencapaian": None, "Status": "Peserta tidak ditemukan"}
+
+    # Tentukan target jarak berdasarkan kategori lomba
+    kategori_lomba = {
+        "180K RIDE SOLO": 180,
+        "170K RUN TEAM OF 4": 170,
+        "85K RUN DUO": 85,
+        "540K RIDE TEAM OF 4": 540,
+        "42.2K RUN SOLO": 42.2  # Jika ada kategori sepeda
+    }
+    target_distance = kategori_lomba.get(kategori, 42.2)  # Default ke 42.2 km jika kategori tidak dikenal
+
+    # Filter data berdasarkan nomor BIB
+    df_peserta = df_detail[df_detail["bib_peserta"] == f"{bib_number:04d}"].copy()
+
+    if df_peserta.empty:
+        return {"BIB": bib_number, "Kategori": kategori, "Target Distance": target_distance, "Tanggal Pencapaian": None, "Status": "Tidak ada data aktivitas"}
+
+    # Konversi tanggal ke format datetime
+    df_peserta["tanggal_submit"] = pd.to_datetime(df_peserta["tanggal_submit"], format='%d/%m/%Y %H:%M:%S', errors="coerce")
+
+    # Pastikan data diurutkan berdasarkan tanggal submit
+    df_peserta = df_peserta.sort_values(by="tanggal_submit")
+
+    # Hitung jarak kumulatif
+    df_peserta["jarak_kumulatif"] = df_peserta["jarak"].cumsum()
+
+    # Cari baris pertama yang mencapai target jarak
+    mencapai_target = df_peserta[df_peserta["jarak_kumulatif"] >= target_distance]
+
+    if not mencapai_target.empty:
+        tanggal_target = mencapai_target.iloc[0]["tanggal_submit"]
+        return {
+            "BIB": bib_number,
+            "Nama": nama_peserta,
+            "Kategori": kategori,
+            "Target Distance": target_distance,
+            "Tanggal Pencapaian": tanggal_target.strftime("%Y-%m-%d %H:%M:%S"),
+            "Status": "Target tercapai",
+        }
+    else:
+        return {
+            "BIB": bib_number,
+            "Nama": nama_peserta,
+            "Kategori": kategori,
+            "Target Distance": target_distance,
+            "Tanggal Pencapaian": None,
+            "Status": "Belum mencapai target",
+        }
 
 def generate_complete_data(bib_number, df_detail, df_podium, data_path, verbose):
     """
@@ -983,6 +1281,9 @@ def generate_complete_data(bib_number, df_detail, df_podium, data_path, verbose)
                 "speed": "Speed (km/h)"
             })
 
+            estimated_time = best_activity_stats["estimated_time_for_target_distance"]
+            formatted_time = f"{estimated_time.components.hours:02}:{estimated_time.components.minutes:02}:{estimated_time.components.seconds:02}"
+
             # Cetak hasil
             if debug:
                  # Cetak tabel aktivitas terbaik
@@ -994,8 +1295,6 @@ def generate_complete_data(bib_number, df_detail, df_podium, data_path, verbose)
                 if verbose: print(f"🔹 Rata-rata Speed: {best_activity_stats['Average Speed']:.2f} km/h")
                 if verbose: print(f"🔹 Total Waktu: {best_activity_stats['Total Time']}")
                 if verbose: 
-                    estimated_time = best_activity_stats['Estimated Time for target distance']
-                    formatted_time = f"{estimated_time.components.hours:02}:{estimated_time.components.minutes:02}:{estimated_time.components.seconds:02}"
                     print(f"🔹 Estimasi Waktu untuk {target_distance} km: {formatted_time}")
 
 
@@ -1010,8 +1309,6 @@ def generate_complete_data(bib_number, df_detail, df_podium, data_path, verbose)
                     file.write(f"- Rata-rata Speed: {best_activity_stats['Average Speed']:.2f} km/h\n")
                     file.write(f"- Total Waktu: {best_activity_stats['Total Time']}\n")
 
-                    estimated_time = best_activity_stats['Estimated Time for target distance']
-                    formatted_time = f"{estimated_time.components.hours:02}:{estimated_time.components.minutes:02}:{estimated_time.components.seconds:02}"
                     file.write(f"- Estimasi Waktu untuk {target_distance} km: {formatted_time}\n")
 
                     if verbose: print(f"✅ Best Activities telah disimpan ke {output_file}")

@@ -1,5 +1,5 @@
 # Library import
-from generate_data import generate_complete_data
+from generate_data import *
 from generate_card import generate_personalized_card
 from generate_zip import generate_zip, cleanup_all_files_output_folder
 from send_to_Whatsapp import send_file_whatsapp
@@ -121,6 +121,13 @@ def process_multiple_cards(df_detail, df_podium, mode, verbose=True):
             mode=mode
         )
 
+def generate_race_result(df_detail, df_podium, verbose=True):
+    # Menyimpan data hasil lomba peserta (solo)
+    save_participant_data_to_csv(df_detail, df_podium)
+
+    # Menyimpan data hasil lomba peserta (duo & tim)
+    save_all_teams_stats_to_csv(df_detail)
+
 def get_mode_action(df_detail, df_podium, verbose):
     """ Dictionary mapping untuk memetakan mode ke fungsi yang sesuai """
     return {
@@ -130,6 +137,7 @@ def get_mode_action(df_detail, df_podium, verbose):
         CREATE_MULTIPLE_PARTICIPANTS_MODE: lambda: process_multiple_cards(df_detail, df_podium, CREATE_MODE, verbose),
         SEND_SINGLE_PARTICIPANT_MODE: lambda: process_card_creation_or_sending(df_detail, df_podium, SEND_MODE, verbose),
         SEND_MULTIPLE_PARTICIPANTS_MODE: lambda: process_multiple_cards(df_detail, df_podium, SEND_MODE, verbose),
+        GENERATE_RACE_RESULT_MODE : lambda : generate_race_result(df_detail, df_podium, verbose),
         CLEAR_ALL_OUTPUT_MODE: lambda: cleanup_all_files_output_folder(),
         REFRESH_MODE: lambda: (clear(), print_logo_options()),
         EXIT_MODE: lambda: exit_normally(),  

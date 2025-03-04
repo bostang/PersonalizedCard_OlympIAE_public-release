@@ -22,6 +22,7 @@ CREATE_SINGLE_PARTICIPANT_MODE = 3
 CREATE_MULTIPLE_PARTICIPANTS_MODE = 4
 SEND_SINGLE_PARTICIPANT_MODE = 5
 SEND_MULTIPLE_PARTICIPANTS_MODE = 6
+GENERATE_RACE_RESULT_MODE = 7
 CLEAR_ALL_OUTPUT_MODE = 8
 REFRESH_MODE = 9
 EXIT_MODE = 0
@@ -33,6 +34,7 @@ mode_descriptions = {
     CREATE_MULTIPLE_PARTICIPANTS_MODE : "Buat untuk banyak orang",
     SEND_SINGLE_PARTICIPANT_MODE : "Kirim untuk satu orang",
     SEND_MULTIPLE_PARTICIPANTS_MODE : "Kirim ke banyak orang",
+    GENERATE_RACE_RESULT_MODE : "Generage Hasil Lomba dalam .csv",
     CLEAR_ALL_OUTPUT_MODE: "CLEAR OUTPUT FOLDER",
     REFRESH_MODE: "REFRESH DISPLAY",
     EXIT_MODE: "EXIT"
@@ -110,7 +112,7 @@ def get_valid_positive_integer(upper_limit, message=""):
 
 def get_statistik_peserta(bib_number, df_podium):
     # Filter data berdasarkan kategori dan jenis kegiatan dengan .copy()
-    df_statistik = df_podium
+    df_statistik = df_podium.copy()
 
     # Pastikan kolom numerik diubah ke tipe data yang benar
     df_statistik['jarak'] = pd.to_numeric(df_statistik['jarak'], errors='coerce')
